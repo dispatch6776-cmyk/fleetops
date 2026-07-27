@@ -139,15 +139,36 @@ out center tags;
 `.trim();
 }
 
+// Per-endpoint timeout — the server-side `[out:json][timeout:25]` in the query
+// only bounds Overpass's own query execution time, not how long it can sit
+// queued before it even starts, or a stalled connection. Without a client-side
+// abort, a hung mirror leaves the UI spinning forever. 20s is short enough to
+// still try the second mirror within the "up to 30s" budget we show the user.
+const OVERPASS_TIMEOUT_MS = 20 * 1000;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function runOverpassQuery(query: string): Promise<OverpassElement[]> {
   let lastError: Error | null = null;
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
-      });
+      const response = await fetchWithTimeout(
+        endpoint,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `data=${encodeURIComponent(query)}`,
+        },
+        OVERPASS_TIMEOUT_MS,
+      );
       if (!response.ok) {
         lastError = new Error(`OpenStreetMap search failed (${response.status}). Try again in a moment.`);
         continue;
@@ -155,6 +176,10 @@ async function runOverpassQuery(query: string): Promise<OverpassElement[]> {
       const data = (await response.json()) as { elements: OverpassElement[] };
       return data.elements ?? [];
     } catch (fetchError) {
+      if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
+        lastError = new Error('OpenStreetMap search timed out. Try again in a moment.');
+        continue;
+      }
       lastError = fetchError instanceof Error ? fetchError : new Error('OpenStreetMap search failed.');
     }
   }
