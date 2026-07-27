@@ -326,3 +326,8 @@
 .fleet-calendar .fc .fc-list-day-cushion {
   background: hsl(var(--surface-muted));
 }
+
+/* Dark-mode tile filter for the free (keyless) OpenStreetMap tile layer. */
+.map-tiles-dark {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}

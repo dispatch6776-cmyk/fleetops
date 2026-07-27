@@ -90,16 +90,20 @@ export const DISTANCE_OPTIONS = [
 /** Fallback centre — the geographic middle of the lower 48. */
 export const DEFAULT_CENTER = { lat: 39.8283, lng: -98.5795 };
 
-/** Free basemap tile layers — no key required. Attribution is mandatory. */
+/**
+ * Free basemap tile layer — no key required. Attribution is mandatory.
+ * Uses the standard OpenStreetMap tile server, the most reliable free/keyless
+ * option (CARTO's anonymous basemap CDN has been returning 503s).
+ * Dark mode is achieved with a CSS filter on the tile layer instead of a
+ * separate (keyed) dark tile set.
+ */
 export const TILE_LAYERS = {
   light: {
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   },
   dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   },
 } as const;

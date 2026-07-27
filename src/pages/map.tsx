@@ -236,7 +236,11 @@ export default function MapPage() {
             scrollWheelZoom
           >
             <MapRecenter center={searchCenter} zoom={10} />
-            <TileLayer url={tileLayer.url} attribution={tileLayer.attribution} />
+            <TileLayer
+              url={tileLayer.url}
+              attribution={tileLayer.attribution}
+              className={resolved === 'dark' ? 'map-tiles-dark' : undefined}
+            />
 
             {truckPosition ? (
               <CircleMarker
