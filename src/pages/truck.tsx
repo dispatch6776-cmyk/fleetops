@@ -55,6 +55,7 @@ export default function TruckPage() {
 
   const [editTruckOpen, setEditTruckOpen] = useState(false);
   const [editComplianceOpen, setEditComplianceOpen] = useState(false);
+  const [addTruckOpen, setAddTruckOpen] = useState(false);
 
   if (isError) {
     return <ErrorState title="Could not load the truck" error={error} onRetry={() => void refetch()} />;
@@ -71,11 +72,19 @@ export default function TruckPage() {
 
   if (!truck) {
     return (
-      <EmptyState
-        icon={TruckIcon}
-        title="No truck on file"
-        description="Once a truck is added, its specifications, compliance dates and rental terms appear here."
-      />
+      <>
+        <EmptyState
+          icon={TruckIcon}
+          title="No truck on file"
+          description="Once a truck is added, its specifications, compliance dates and rental terms appear here."
+          action={
+            <PermissionGate permission="truck.edit">
+              <Button onClick={() => setAddTruckOpen(true)}>Add your truck</Button>
+            </PermissionGate>
+          }
+        />
+        <TruckFormDialog truck={null} open={addTruckOpen} onOpenChange={setAddTruckOpen} />
+      </>
     );
   }
 

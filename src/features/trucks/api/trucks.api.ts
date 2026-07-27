@@ -5,6 +5,7 @@ import type {
   RentalCompany,
   Truck,
   TruckLocation,
+  TablesInsert,
   TablesUpdate,
   Driver,
 } from '@/types';
@@ -22,6 +23,13 @@ export async function listTrucks(): Promise<Truck[]> {
 export async function getTruck(id: string): Promise<Truck> {
   const supabase = requireSupabase();
   const { data, error } = await supabase.from('trucks').select('*').eq('id', id).single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function createTruck(input: TablesInsert<'trucks'>): Promise<Truck> {
+  const supabase = requireSupabase();
+  const { data, error } = await supabase.from('trucks').insert(input).select().single();
   if (error) throw new Error(error.message);
   return data;
 }

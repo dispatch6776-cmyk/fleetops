@@ -16,7 +16,7 @@ import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { queryKeys } from '@/app/query-client';
-import { updateTruck } from '../api/trucks.api';
+import { createTruck, updateTruck } from '../api/trucks.api';
 import { blankToNull, truckSchema, type TruckInput } from '../schemas';
 import {
   FUEL_TYPE_LABELS,
@@ -63,28 +63,30 @@ export function TruckFormDialog({
   onOpenChange,
   trigger,
 }: {
-  truck: Truck;
+  truck: Truck | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   trigger?: ReactNode;
 }) {
+  const isCreate = !truck;
   const queryClient = useQueryClient();
 
   const form = useForm<TruckInput>({
     resolver: zodResolver(truckSchema),
-    defaultValues: toDefaults(truck),
+    defaultValues: truck ? toDefaults(truck) : blankDefaults(),
   });
 
   useEffect(() => {
-    if (open) form.reset(toDefaults(truck));
+    if (open) form.reset(truck ? toDefaults(truck) : blankDefaults());
   }, [open, truck, form]);
 
   const mutation = useMutation({
-    mutationFn: (values: TruckInput) => updateTruck(truck.id, blankToNull(values)),
-    onSuccess: () => {
-      toast.success('Truck profile updated');
+    mutationFn: (values: TruckInput) =>
+      truck ? updateTruck(truck.id, blankToNull(values)) : createTruck(blankToNull(values)),
+    onSuccess: (saved) => {
+      toast.success(isCreate ? 'Truck added' : 'Truck profile updated');
       void queryClient.invalidateQueries({ queryKey: queryKeys.trucks() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.truck(truck.id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.truck(saved.id) });
       onOpenChange(false);
     },
   });
@@ -96,7 +98,7 @@ export function TruckFormDialog({
       {trigger}
       <DialogContent size="xl" className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit truck profile</DialogTitle>
+          <DialogTitle>{isCreate ? 'Add truck' : 'Edit truck profile'}</DialogTitle>
           <DialogDescription>
             Specifications feed the dashboard gauges, tire-life estimate and depreciation figures.
           </DialogDescription>
@@ -229,13 +231,42 @@ export function TruckFormDialog({
               Cancel
             </Button>
             <Button type="submit" loading={mutation.isPending}>
-              Save changes
+              {isCreate ? 'Add truck' : 'Save changes'}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   );
+}
+
+function blankDefaults(): TruckInput {
+  return {
+    truck_number: '',
+    vin: '',
+    license_plate: '',
+    plate_state: '',
+    year: new Date().getFullYear(),
+    make: '',
+    model: '',
+    color: '',
+    engine: '',
+    engine_hours: null,
+    transmission: undefined,
+    odometer: 0,
+    fuel_type: 'diesel',
+    tank_capacity_gal: null,
+    tire_size: '',
+    tire_installed_miles: null,
+    tire_life_miles: null,
+    gvwr_lbs: null,
+    axles: null,
+    status: 'active',
+    purchase_date: '',
+    purchase_price: null,
+    current_value: null,
+    notes: '',
+  } as TruckInput;
 }
 
 function toDefaults(truck: Truck): TruckInput {
