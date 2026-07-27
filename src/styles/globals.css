@@ -1,0 +1,328 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   FleetOps design tokens
+   Light + dark themes. All colours are HSL triplets so Tailwind can apply
+   opacity modifiers (e.g. `bg-primary/10`).
+   ========================================================================== */
+
+@layer base {
+  :root {
+    --background: 220 33% 98%;
+    --foreground: 222 47% 11%;
+
+    --surface: 0 0% 100%;
+    --surface-muted: 220 24% 96%;
+    --surface-raised: 0 0% 100%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 221 83% 96%;
+
+    --secondary: 220 20% 94%;
+    --secondary-foreground: 222 40% 20%;
+
+    --muted: 220 20% 95%;
+    --muted-foreground: 220 12% 46%;
+
+    --accent: 221 83% 96%;
+    --accent-foreground: 221 83% 40%;
+
+    --success: 152 62% 36%;
+    --success-foreground: 0 0% 100%;
+    --success-soft: 152 60% 94%;
+
+    --warning: 32 92% 45%;
+    --warning-foreground: 0 0% 100%;
+    --warning-soft: 38 95% 94%;
+
+    --danger: 0 72% 48%;
+    --danger-foreground: 0 0% 100%;
+    --danger-soft: 0 86% 96%;
+
+    --info: 199 89% 44%;
+    --info-foreground: 0 0% 100%;
+    --info-soft: 199 90% 95%;
+
+    --border: 220 18% 89%;
+    --input: 220 18% 89%;
+    --ring: 221 83% 53%;
+
+    --shadow-color: 222 47% 25%;
+    --radius: 0.75rem;
+
+    --sidebar-width: 16rem;
+    --sidebar-width-collapsed: 4.5rem;
+    --topbar-height: 3.75rem;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 213 31% 95%;
+
+    --surface: 222 40% 10%;
+    --surface-muted: 222 34% 13%;
+    --surface-raised: 222 36% 12%;
+
+    --card: 222 40% 10%;
+    --card-foreground: 213 31% 95%;
+
+    --popover: 222 42% 11%;
+    --popover-foreground: 213 31% 95%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 8%;
+    --primary-soft: 217 60% 18%;
+
+    --secondary: 222 30% 17%;
+    --secondary-foreground: 213 31% 92%;
+
+    --muted: 222 30% 16%;
+    --muted-foreground: 218 14% 65%;
+
+    --accent: 217 55% 18%;
+    --accent-foreground: 217 91% 76%;
+
+    --success: 152 58% 45%;
+    --success-foreground: 150 90% 6%;
+    --success-soft: 152 45% 16%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 30 90% 8%;
+    --warning-soft: 38 60% 17%;
+
+    --danger: 0 72% 58%;
+    --danger-foreground: 0 90% 8%;
+    --danger-soft: 0 50% 18%;
+
+    --info: 199 89% 56%;
+    --info-foreground: 200 90% 8%;
+    --info-soft: 199 55% 17%;
+
+    --border: 222 24% 20%;
+    --input: 222 24% 22%;
+    --ring: 217 91% 60%;
+
+    --shadow-color: 222 60% 2%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings:
+      'cv02' 1,
+      'cv03' 1,
+      'cv04' 1,
+      'tnum' 0;
+    text-rendering: optimizeLegibility;
+    min-height: 100dvh;
+  }
+
+  ::selection {
+    @apply bg-primary/25;
+  }
+
+  /* Focus ring — visible for keyboard users only. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full border-[3px] border-solid border-transparent bg-border bg-clip-content;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50 bg-clip-content;
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Frosted-glass panel used by the topbar, command palette and overlays. */
+  .glass {
+    @apply border border-border/60 bg-surface/70 backdrop-blur-xl backdrop-saturate-150;
+  }
+
+  .panel {
+    @apply rounded-xl border border-border bg-card shadow-card;
+  }
+
+  .stat-value {
+    @apply font-mono text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl;
+  }
+
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-muted;
+  }
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-foreground/10 to-transparent;
+    content: '';
+  }
+
+  .nav-link {
+    @apply relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-secondary hover:text-foreground;
+  }
+  .nav-link[data-active='true'] {
+    @apply bg-accent text-accent-foreground;
+  }
+  .nav-link[data-active='true']::before {
+    @apply absolute left-0 top-1/2 h-5 w-1 -translate-y-1/2 rounded-r-full bg-primary;
+    content: '';
+  }
+
+  .table-row-hover {
+    @apply transition-colors hover:bg-secondary/60;
+  }
+
+  /* Print: reports and invoices */
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+    body {
+      background: #fff !important;
+      color: #000 !important;
+    }
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .grid-bg {
+    background-image: var(--tw-gradient-grid, none);
+    background-size: 32px 32px;
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* FullCalendar theming hooks (module loaded in Phase 8) */
+:root {
+  --fc-border-color: hsl(var(--border));
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: hsl(var(--muted));
+  --fc-today-bg-color: hsl(var(--primary) / 0.08);
+  --fc-event-border-color: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   FullCalendar — align the third-party widget with the design system.
+   --------------------------------------------------------------------------- */
+.fleet-calendar .fc {
+  --fc-border-color: hsl(var(--border));
+  --fc-today-bg-color: hsl(var(--primary) / 0.07);
+  font-family: inherit;
+}
+.fleet-calendar .fc .fc-toolbar-title {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.fleet-calendar .fc .fc-button {
+  background: hsl(var(--surface));
+  border: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+  font-size: 0.8125rem;
+  font-weight: 500;
+  padding: 0.35rem 0.7rem;
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: none;
+  text-transform: capitalize;
+}
+.fleet-calendar .fc .fc-button:hover {
+  background: hsl(var(--secondary));
+}
+.fleet-calendar .fc .fc-button-primary:not(:disabled).fc-button-active,
+.fleet-calendar .fc .fc-button-primary:not(:disabled):active {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+}
+.fleet-calendar .fc .fc-button:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.fleet-calendar .fc .fc-col-header-cell-cushion {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+  padding: 0.5rem 0;
+}
+.fleet-calendar .fc .fc-daygrid-day-number {
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  padding: 0.35rem 0.45rem;
+}
+.fleet-calendar .fc .fc-day-today .fc-daygrid-day-number {
+  color: hsl(var(--primary));
+  font-weight: 600;
+}
+.fleet-calendar .fc .fc-event {
+  border-radius: 6px;
+  border: none;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 1px 5px;
+  cursor: pointer;
+}
+.fleet-calendar .fc .fc-list-event:hover td {
+  background: hsl(var(--secondary));
+}
+.fleet-calendar .fc .fc-list-day-cushion {
+  background: hsl(var(--surface-muted));
+}
