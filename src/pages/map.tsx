@@ -57,7 +57,9 @@ export default function MapPage() {
 
   const [categoryId, setCategoryId] = useState(SHOP_CATEGORIES[0].id);
   const [brandId, setBrandId] = useState('all');
-  const [radius, setRadius] = useState('40234');
+  // 10 miles by default — a smaller radius means a faster Overpass query on
+  // the free/shared public instance. Owners can still widen it manually.
+  const [radius, setRadius] = useState('16093');
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [hoveredPlaceId, setHoveredPlaceId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -298,8 +300,11 @@ export default function MapPage() {
           {error ? <ErrorState title="Search failed" description={error} onRetry={() => void refresh()} /> : null}
 
           {loading ? (
-            <div className="flex justify-center py-10">
+            <div className="flex flex-col items-center gap-2 py-10">
               <Spinner label="Searching OpenStreetMap" />
+              <p className="text-xs text-muted-foreground">
+                Free public data source — can take up to 30 seconds on busy days.
+              </p>
             </div>
           ) : places.length === 0 && !error ? (
             <EmptyState

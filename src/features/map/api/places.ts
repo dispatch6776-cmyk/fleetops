@@ -80,6 +80,28 @@ interface OverpassElement {
 /** In-memory cache of the raw elements from the last search, keyed by placeId. */
 const elementCache = new Map<string, OverpassElement>();
 
+/**
+ * Search results cache — Overpass is a free, shared public service that can
+ * take anywhere from a couple seconds to 20-30+ seconds under load, so we
+ * cache by (category + rounded location + radius) for a few minutes. Repeat
+ * searches in the same area (switching tabs, re-opening the page, toggling a
+ * filter back and forth) come back instantly instead of re-querying.
+ */
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+interface SearchCacheEntry {
+  expiresAt: number;
+  promise: Promise<NearbyPlace[]>;
+}
+const searchCache = new Map<string, SearchCacheEntry>();
+
+function searchCacheKey(params: NearbySearchParams): string {
+  // Round to ~1.1km so nearby map pans/re-centers still hit the same cache entry.
+  const lat = params.center.lat.toFixed(2);
+  const lng = params.center.lng.toFixed(2);
+  const nameRegex = params.nameRegexOverride ?? params.category.nameRegex ?? '';
+  return `${params.category.id}|${nameRegex}|${params.radius}|${lat}|${lng}`;
+}
+
 function buildOverpassQuery(
   filters: OverpassFilter[],
   center: { lat: number; lng: number },
@@ -192,7 +214,7 @@ export interface NearbySearchParams {
   nameRegexOverride?: string;
 }
 
-export async function searchNearby({
+async function runSearchNearby({
   center,
   radius,
   category,
@@ -214,6 +236,27 @@ export async function searchNearby({
   }
 
   return places.sort((a, b) => (a.distanceMiles ?? 0) - (b.distanceMiles ?? 0));
+}
+
+export async function searchNearby(params: NearbySearchParams): Promise<NearbyPlace[]> {
+  const key = searchCacheKey(params);
+  const cached = searchCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.promise;
+  }
+
+  const promise = runSearchNearby(params);
+  searchCache.set(key, { expiresAt: Date.now() + SEARCH_CACHE_TTL_MS, promise });
+
+  try {
+    return await promise;
+  } catch (searchError) {
+    // Don't cache failures — let the next attempt retry against Overpass.
+    if (searchCache.get(key)?.promise === promise) {
+      searchCache.delete(key);
+    }
+    throw searchError;
+  }
 }
 
 export async function getPlaceDetails(
