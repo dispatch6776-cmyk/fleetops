@@ -4,39 +4,37 @@ import toast from 'react-hot-toast';
 import { queryKeys } from '@/app/query-client';
 import { requireSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { ServiceShop, TablesInsert } from '@/types';
-import { getPlaceDetails, searchNearby, type NearbyPlace, type PlaceDetails } from './api/places';
+import type { ShopCategory } from './constants';
+import {
+  geocodeSearch,
+  getPlaceDetails,
+  searchNearby,
+  type GeocodeResult,
+  type NearbyPlace,
+  type PlaceDetails,
+} from './api/places';
 
 export interface SearchOptions {
   center: { lat: number; lng: number } | null;
   radius: number;
-  keyword: string;
-  type?: string;
-  openNow: boolean;
-  minRating: number;
+  category: ShopCategory;
+  nameRegexOverride?: string;
   enabled: boolean;
 }
 
 /**
- * Runs a Places nearby search whenever the criteria change. The PlacesService
- * needs a map (or a div) to attach to, so the caller passes the map instance
- * once it is ready.
+ * Runs a free OpenStreetMap (Overpass) nearby search whenever the criteria
+ * change. Unlike a paid Places API this needs no map instance or API key —
+ * it's a plain fetch keyed off the current search center.
  */
-export function useNearbyPlaces(map: google.maps.Map | null, options: SearchOptions) {
+export function useNearbyPlaces(options: SearchOptions) {
   const [places, setPlaces] = useState<NearbyPlace[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const serviceRef = useRef<google.maps.places.PlacesService | null>(null);
   const requestId = useRef(0);
 
-  useEffect(() => {
-    if (map && !serviceRef.current) {
-      serviceRef.current = new google.maps.places.PlacesService(map);
-    }
-  }, [map]);
-
   const run = useCallback(async () => {
-    const service = serviceRef.current;
-    if (!service || !options.center || !options.enabled) return;
+    if (!options.center || !options.enabled) return;
 
     const id = ++requestId.current;
     setLoading(true);
@@ -44,13 +42,10 @@ export function useNearbyPlaces(map: google.maps.Map | null, options: SearchOpti
 
     try {
       const results = await searchNearby({
-        service,
         center: options.center,
         radius: options.radius,
-        keyword: options.keyword,
-        type: options.type,
-        openNow: options.openNow,
-        minRating: options.minRating,
+        category: options.category,
+        nameRegexOverride: options.nameRegexOverride,
       });
       if (id === requestId.current) setPlaces(results);
     } catch (searchError) {
@@ -60,26 +55,30 @@ export function useNearbyPlaces(map: google.maps.Map | null, options: SearchOpti
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [options.center, options.radius, options.keyword, options.type, options.openNow, options.minRating, options.enabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    options.center?.lat,
+    options.center?.lng,
+    options.radius,
+    options.category,
+    options.nameRegexOverride,
+    options.enabled,
+  ]);
 
   useEffect(() => {
     void run();
   }, [run]);
 
-  return { places, loading, error, refresh: run, service: serviceRef };
+  return { places, loading, error, refresh: run };
 }
 
-export function usePlaceDetails(
-  service: google.maps.places.PlacesService | null,
-  placeId: string | null,
-  origin?: { lat: number; lng: number } | null,
-) {
+export function usePlaceDetails(placeId: string | null, origin?: { lat: number; lng: number } | null) {
   const [details, setDetails] = useState<PlaceDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!service || !placeId) {
+    if (!placeId) {
       setDetails(null);
       return;
     }
@@ -87,7 +86,7 @@ export function usePlaceDetails(
     setLoading(true);
     setError(null);
 
-    getPlaceDetails(service, placeId, origin ?? undefined)
+    getPlaceDetails(placeId, origin ?? undefined)
       .then((result) => {
         if (!cancelled) setDetails(result);
       })
@@ -103,9 +102,47 @@ export function usePlaceDetails(
     return () => {
       cancelled = true;
     };
-  }, [service, placeId, origin?.lat, origin?.lng]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeId, origin?.lat, origin?.lng]);
 
   return { details, loading, error };
+}
+
+/** Free-text location search (address/city/zip) backed by Nominatim geocoding. */
+export function useLocationSearch() {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<GeocodeResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
+
+  const search = useCallback(async () => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setResults([]);
+      return;
+    }
+    const id = ++requestId.current;
+    setLoading(true);
+    setError(null);
+    try {
+      const found = await geocodeSearch(trimmed);
+      if (id === requestId.current) setResults(found);
+    } catch (searchError) {
+      if (id === requestId.current) {
+        setError(searchError instanceof Error ? searchError.message : 'Search failed');
+      }
+    } finally {
+      if (id === requestId.current) setLoading(false);
+    }
+  }, [query]);
+
+  const clear = useCallback(() => {
+    setResults([]);
+    setError(null);
+  }, []);
+
+  return { query, setQuery, results, loading, error, search, clear };
 }
 
 // ---------------------------------------------------------------------------

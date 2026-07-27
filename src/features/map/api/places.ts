@@ -1,9 +1,16 @@
 /**
- * Thin wrappers around the Google Places JavaScript service.
+ * Free, keyless map data sources.
  *
- * The Places library is loaded by `useJsApiLoader`, so these helpers assume the
- * `google` global exists — every caller guards on `isLoaded` first.
+ * - Overpass API (https://overpass-api.de) for nearby shops/stops — an open
+ *   mirror of OpenStreetMap data. No API key, no billing.
+ * - Nominatim (https://nominatim.openstreetmap.org) for turning a typed
+ *   address/city/zip into coordinates (the "search box").
+ *
+ * Trade-off vs. a paid provider: no star ratings, reviews or photos — OSM
+ * doesn't carry that data. Everything else (name, address, phone, website,
+ * hours, distance, directions) still works.
  */
+import type { OverpassFilter, ShopCategory } from '../constants';
 
 export interface NearbyPlace {
   placeId: string;
@@ -53,138 +60,215 @@ export function haversineMiles(
   return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
 }
 
-function photoUrl(photo: google.maps.places.PlacePhoto | undefined, width = 640): string | null {
-  try {
-    return photo ? photo.getUrl({ maxWidth: width }) : null;
-  } catch {
-    return null;
+const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
+const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org';
+
+interface OverpassElement {
+  type: 'node' | 'way' | 'relation';
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: Record<string, string>;
+}
+
+/** In-memory cache of the raw elements from the last search, keyed by placeId. */
+const elementCache = new Map<string, OverpassElement>();
+
+function buildOverpassQuery(
+  filters: OverpassFilter[],
+  center: { lat: number; lng: number },
+  radiusMeters: number,
+  nameRegex?: string,
+): string {
+  const around = `(around:${Math.round(radiusMeters)},${center.lat},${center.lng})`;
+  const clauses = filters
+    .map((filter) => {
+      const tagClause = filter.value ? `["${filter.key}"="${filter.value}"]` : `["${filter.key}"]`;
+      return [
+        `  node${tagClause}${around};`,
+        `  way${tagClause}${around};`,
+      ].join('\n');
+    })
+    .join('\n');
+
+  // Also try a pure name-match search (any shop/amenity whose name matches),
+  // so brand searches like "Love's" surface results even if the tag scheme
+  // used by that particular mapper differs from our filter list.
+  const nameOnlyClause = nameRegex
+    ? [
+        `  node["name"~"${nameRegex}",i]${around};`,
+        `  way["name"~"${nameRegex}",i]${around};`,
+      ].join('\n')
+    : '';
+
+  return `
+[out:json][timeout:25];
+(
+${clauses}
+${nameOnlyClause}
+);
+out center tags;
+`.trim();
+}
+
+async function runOverpassQuery(query: string): Promise<OverpassElement[]> {
+  const response = await fetch(OVERPASS_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `data=${encodeURIComponent(query)}`,
+  });
+  if (!response.ok) {
+    throw new Error(`OpenStreetMap search failed (${response.status}). Try again in a moment.`);
   }
+  const data = (await response.json()) as { elements: OverpassElement[] };
+  return data.elements ?? [];
+}
+
+function elementLocation(element: OverpassElement): { lat: number; lng: number } | null {
+  if (typeof element.lat === 'number' && typeof element.lon === 'number') {
+    return { lat: element.lat, lng: element.lon };
+  }
+  if (element.center) {
+    return { lat: element.center.lat, lng: element.center.lon };
+  }
+  return null;
+}
+
+function formatAddress(tags: Record<string, string>): string {
+  const parts = [
+    [tags['addr:housenumber'], tags['addr:street']].filter(Boolean).join(' '),
+    tags['addr:city'],
+    [tags['addr:state'], tags['addr:postcode']].filter(Boolean).join(' '),
+  ].filter((part) => part && part.trim().length > 0);
+  return parts.join(', ');
+}
+
+function toNearbyPlace(
+  element: OverpassElement,
+  center: { lat: number; lng: number },
+): NearbyPlace | null {
+  const location = elementLocation(element);
+  const tags = element.tags ?? {};
+  if (!location || !tags.name) return null;
+
+  const placeId = `${element.type}/${element.id}`;
+  elementCache.set(placeId, element);
+
+  return {
+    placeId,
+    name: tags.name,
+    address: formatAddress(tags) || tags['addr:full'] || '',
+    location,
+    rating: null,
+    reviewCount: null,
+    openNow: null,
+    priceLevel: null,
+    types: [tags.shop, tags.amenity, tags.craft].filter((value): value is string => Boolean(value)),
+    photoUrl: null,
+    distanceMiles: haversineMiles(center, location),
+  };
 }
 
 export interface NearbySearchParams {
-  service: google.maps.places.PlacesService;
   center: { lat: number; lng: number };
   radius: number;
-  keyword: string;
-  type?: string;
-  openNow?: boolean;
-  minRating?: number;
+  category: ShopCategory;
+  /** When set (a brand filter is active), search by name instead of the category's tags. */
+  nameRegexOverride?: string;
 }
 
-export function searchNearby({
-  service,
+export async function searchNearby({
   center,
   radius,
-  keyword,
-  type,
-  openNow,
-  minRating = 0,
+  category,
+  nameRegexOverride,
 }: NearbySearchParams): Promise<NearbyPlace[]> {
-  return new Promise((resolve, reject) => {
-    const request: google.maps.places.PlaceSearchRequest = {
-      location: new google.maps.LatLng(center.lat, center.lng),
-      radius,
-      keyword,
-      ...(type ? { type } : {}),
-      ...(openNow ? { openNow: true } : {}),
-    };
+  const nameRegex = nameRegexOverride ?? category.nameRegex;
+  const query = buildOverpassQuery(category.filters, center, radius, nameRegex);
+  const elements = await runOverpassQuery(query);
 
-    service.nearbySearch(request, (results, status) => {
-      if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
-        resolve([]);
-        return;
-      }
-      if (status !== google.maps.places.PlacesServiceStatus.OK || !results) {
-        reject(new Error(`Places search failed (${status}).`));
-        return;
-      }
+  const seen = new Set<string>();
+  const places: NearbyPlace[] = [];
+  for (const element of elements) {
+    const place = toNearbyPlace(element, center);
+    if (!place) continue;
+    const dedupeKey = `${place.name.toLowerCase()}|${place.location.lat.toFixed(3)}|${place.location.lng.toFixed(3)}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    places.push(place);
+  }
 
-      const mapped = results
-        .filter((place) => place.place_id && place.geometry?.location)
-        .map<NearbyPlace>((place) => {
-          const location = {
-            lat: place.geometry!.location!.lat(),
-            lng: place.geometry!.location!.lng(),
-          };
-          return {
-            placeId: place.place_id as string,
-            name: place.name ?? 'Unnamed location',
-            address: place.vicinity ?? place.formatted_address ?? '',
-            location,
-            rating: place.rating ?? null,
-            reviewCount: place.user_ratings_total ?? null,
-            openNow: place.opening_hours?.isOpen?.() ?? null,
-            priceLevel: place.price_level ?? null,
-            types: place.types ?? [],
-            photoUrl: photoUrl(place.photos?.[0], 400),
-            distanceMiles: haversineMiles(center, location),
-          };
-        })
-        .filter((place) => (place.rating ?? 0) >= minRating)
-        .sort((a, b) => (a.distanceMiles ?? 0) - (b.distanceMiles ?? 0));
-
-      resolve(mapped);
-    });
-  });
+  return places.sort((a, b) => (a.distanceMiles ?? 0) - (b.distanceMiles ?? 0));
 }
 
-export function getPlaceDetails(
-  service: google.maps.places.PlacesService,
+export async function getPlaceDetails(
   placeId: string,
   origin?: { lat: number; lng: number },
 ): Promise<PlaceDetails> {
-  return new Promise((resolve, reject) => {
-    service.getDetails(
-      {
-        placeId,
-        fields: [
-          'place_id', 'name', 'formatted_address', 'geometry', 'rating', 'user_ratings_total',
-          'formatted_phone_number', 'international_phone_number', 'website', 'opening_hours',
-          'photos', 'reviews', 'types', 'url', 'price_level',
-        ],
-      },
-      (place, status) => {
-        if (status !== google.maps.places.PlacesServiceStatus.OK || !place) {
-          reject(new Error(`Could not load place details (${status}).`));
-          return;
-        }
+  const element = elementCache.get(placeId);
+  if (!element) {
+    throw new Error('This shop is no longer in the current search results — try searching again.');
+  }
 
-        const location = place.geometry?.location
-          ? { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() }
-          : { lat: 0, lng: 0 };
+  const tags = element.tags ?? {};
+  const location = elementLocation(element) ?? { lat: 0, lng: 0 };
+  const openingHoursRaw = tags.opening_hours ?? '';
+  const is24Hours = /24\/7/i.test(openingHoursRaw);
 
-        const weekdayText = place.opening_hours?.weekday_text ?? [];
+  return {
+    placeId,
+    name: tags.name ?? 'Unnamed location',
+    address: formatAddress(tags) || tags['addr:full'] || '',
+    location,
+    rating: null,
+    reviewCount: null,
+    openNow: null,
+    priceLevel: null,
+    types: [tags.shop, tags.amenity, tags.craft].filter((value): value is string => Boolean(value)),
+    photoUrl: null,
+    distanceMiles: origin ? haversineMiles(origin, location) : null,
+    phone: tags.phone ?? tags['contact:phone'] ?? null,
+    internationalPhone: tags.phone ?? tags['contact:phone'] ?? null,
+    website: tags.website ?? tags['contact:website'] ?? null,
+    openingHours: openingHoursRaw ? [openingHoursRaw] : [],
+    is24Hours,
+    reviews: [],
+    photos: [],
+    googleMapsUrl: null,
+  };
+}
 
-        resolve({
-          placeId: place.place_id as string,
-          name: place.name ?? 'Unnamed location',
-          address: place.formatted_address ?? '',
-          location,
-          rating: place.rating ?? null,
-          reviewCount: place.user_ratings_total ?? null,
-          openNow: place.opening_hours?.isOpen?.() ?? null,
-          priceLevel: place.price_level ?? null,
-          types: place.types ?? [],
-          photoUrl: photoUrl(place.photos?.[0]),
-          distanceMiles: origin ? haversineMiles(origin, location) : null,
-          phone: place.formatted_phone_number ?? null,
-          internationalPhone: place.international_phone_number ?? null,
-          website: place.website ?? null,
-          openingHours: weekdayText,
-          is24Hours: weekdayText.some((line) => /open 24 hours/i.test(line)),
-          reviews: (place.reviews ?? []).slice(0, 5).map((review) => ({
-            author: review.author_name,
-            rating: review.rating ?? 0,
-            text: review.text ?? '',
-            relativeTime: review.relative_time_description ?? '',
-            profilePhoto: review.profile_photo_url ?? null,
-          })),
-          photos: (place.photos ?? []).slice(0, 6).map((photo) => photoUrl(photo) ?? '').filter(Boolean),
-          googleMapsUrl: place.url ?? null,
-        });
-      },
-    );
+export interface GeocodeResult {
+  lat: number;
+  lng: number;
+  label: string;
+}
+
+/** Turn a typed address/city/zip into coordinates using free Nominatim geocoding. */
+export async function geocodeSearch(query: string): Promise<GeocodeResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    q: trimmed,
+    countrycodes: 'us',
+    limit: '5',
   });
+
+  const response = await fetch(`${NOMINATIM_ENDPOINT}/search?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) {
+    throw new Error('Location search failed. Try again in a moment.');
+  }
+  const results = (await response.json()) as { lat: string; lon: string; display_name: string }[];
+  return results.map((result) => ({
+    lat: Number(result.lat),
+    lng: Number(result.lon),
+    label: result.display_name,
+  }));
 }
 
 /** Turn-by-turn navigation link that works on desktop and both mobile platforms. */

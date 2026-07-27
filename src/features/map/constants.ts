@@ -1,67 +1,83 @@
 import type { LucideIcon } from 'lucide-react';
 import { Fuel, LifeBuoy, Truck, Wrench } from 'lucide-react';
 
+/** A single Overpass tag filter, e.g. { key: 'shop', value: 'car_repair' }. */
+export interface OverpassFilter {
+  key: string;
+  value?: string;
+}
+
 export interface ShopCategory {
   id: string;
   label: string;
   icon: LucideIcon;
-  /** Google Places text query used for the nearby search. */
-  keyword: string;
-  type?: string;
+  /** OpenStreetMap tag filters queried (OR'd together) for this category. */
+  filters: OverpassFilter[];
+  /** Optional case-insensitive regex on the name tag, layered on top of the filters. */
+  nameRegex?: string;
   color: string;
 }
 
 /**
- * The categories an owner-operator actually needs on the road. Brand keywords
- * are passed straight to the Places API so results stay current without us
- * maintaining a directory.
+ * The categories an owner-operator actually needs on the road. Backed by free
+ * OpenStreetMap data via the Overpass API — no API key or billing required.
+ * Coverage varies by area since it's community-mapped, unlike a paid provider.
  */
 export const SHOP_CATEGORIES: ShopCategory[] = [
   {
     id: 'repair',
     label: 'Truck repair',
     icon: Wrench,
-    keyword: 'heavy duty truck repair',
-    type: 'car_repair',
+    filters: [
+      { key: 'shop', value: 'car_repair' },
+      { key: 'shop', value: 'truck' },
+      { key: 'craft', value: 'truck_repair' },
+    ],
+    nameRegex: 'truck|diesel|heavy duty',
     color: 'hsl(var(--primary))',
   },
   {
     id: 'truck_stop',
     label: 'Truck stops',
     icon: Fuel,
-    keyword: 'truck stop',
-    type: 'gas_station',
+    filters: [{ key: 'amenity', value: 'fuel' }],
+    nameRegex: "truck|travel center|petro|pilot|flying j|love's|\\bta\\b",
     color: 'hsl(var(--success))',
   },
   {
     id: 'towing',
     label: 'Towing & recovery',
     icon: LifeBuoy,
-    keyword: 'heavy duty towing',
+    filters: [{ key: 'shop', value: 'car_repair' }],
+    nameRegex: 'tow|recovery|wrecker',
     color: 'hsl(var(--danger))',
   },
   {
     id: 'dealer',
     label: 'Dealers',
     icon: Truck,
-    keyword: 'truck dealership service center',
+    filters: [
+      { key: 'shop', value: 'truck' },
+      { key: 'shop', value: 'car' },
+    ],
+    nameRegex: 'truck|volvo|freightliner|kenworth|peterbilt|international|mack',
     color: 'hsl(var(--info))',
   },
 ];
 
-/** Chain and OEM filters layered on top of the category search. */
-export const BRAND_FILTERS: { id: string; label: string; keyword: string; group: string }[] = [
-  { id: 'ta', label: 'TA / Petro', keyword: 'TA Travel Center Petro', group: 'Truck stops' },
-  { id: 'loves', label: "Love's", keyword: "Love's Travel Stop", group: 'Truck stops' },
-  { id: 'pilot', label: 'Pilot Flying J', keyword: 'Pilot Flying J', group: 'Truck stops' },
-  { id: 'volvo', label: 'Volvo', keyword: 'Volvo Trucks dealer service', group: 'Dealers' },
-  { id: 'freightliner', label: 'Freightliner', keyword: 'Freightliner dealer service', group: 'Dealers' },
-  { id: 'kenworth', label: 'Kenworth', keyword: 'Kenworth dealer service', group: 'Dealers' },
-  { id: 'peterbilt', label: 'Peterbilt', keyword: 'Peterbilt dealer service', group: 'Dealers' },
-  { id: 'international', label: 'International', keyword: 'International Truck dealer service', group: 'Dealers' },
-  { id: 'cummins', label: 'Cummins', keyword: 'Cummins service center', group: 'Engines' },
-  { id: 'detroit', label: 'Detroit Diesel', keyword: 'Detroit Diesel service center', group: 'Engines' },
-  { id: 'cat', label: 'CAT', keyword: 'Caterpillar truck engine service', group: 'Engines' },
+/** Brand/chain filters layered on top of the category search as a name regex. */
+export const BRAND_FILTERS: { id: string; label: string; nameRegex: string; group: string }[] = [
+  { id: 'ta', label: 'TA / Petro', nameRegex: '\\bta\\b|petro', group: 'Truck stops' },
+  { id: 'loves', label: "Love's", nameRegex: "love's", group: 'Truck stops' },
+  { id: 'pilot', label: 'Pilot Flying J', nameRegex: 'pilot|flying j', group: 'Truck stops' },
+  { id: 'volvo', label: 'Volvo', nameRegex: 'volvo', group: 'Dealers' },
+  { id: 'freightliner', label: 'Freightliner', nameRegex: 'freightliner', group: 'Dealers' },
+  { id: 'kenworth', label: 'Kenworth', nameRegex: 'kenworth', group: 'Dealers' },
+  { id: 'peterbilt', label: 'Peterbilt', nameRegex: 'peterbilt', group: 'Dealers' },
+  { id: 'international', label: 'International', nameRegex: 'international', group: 'Dealers' },
+  { id: 'cummins', label: 'Cummins', nameRegex: 'cummins', group: 'Engines' },
+  { id: 'detroit', label: 'Detroit Diesel', nameRegex: 'detroit diesel', group: 'Engines' },
+  { id: 'cat', label: 'CAT', nameRegex: 'caterpillar|\\bcat\\b', group: 'Engines' },
 ];
 
 export const DISTANCE_OPTIONS = [
@@ -74,14 +90,16 @@ export const DISTANCE_OPTIONS = [
 /** Fallback centre — the geographic middle of the lower 48. */
 export const DEFAULT_CENTER = { lat: 39.8283, lng: -98.5795 };
 
-export const MAP_STYLES_DARK: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#0f172a' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1e293b' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#334155' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#cbd5e1' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0b1220' }] },
-  { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-];
+/** Free basemap tile layers — no key required. Attribution is mandatory. */
+export const TILE_LAYERS = {
+  light: {
+    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+  dark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+} as const;
