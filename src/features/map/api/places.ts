@@ -60,7 +60,12 @@ export function haversineMiles(
   return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
 }
 
-const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
+// Public Overpass instances occasionally return 5xx under load — try a short
+// list of mirrors in order rather than failing on the first one.
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
 const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org';
 
 interface OverpassElement {
@@ -113,16 +118,25 @@ out center tags;
 }
 
 async function runOverpassQuery(query: string): Promise<OverpassElement[]> {
-  const response = await fetch(OVERPASS_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `data=${encodeURIComponent(query)}`,
-  });
-  if (!response.ok) {
-    throw new Error(`OpenStreetMap search failed (${response.status}). Try again in a moment.`);
+  let lastError: Error | null = null;
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+      });
+      if (!response.ok) {
+        lastError = new Error(`OpenStreetMap search failed (${response.status}). Try again in a moment.`);
+        continue;
+      }
+      const data = (await response.json()) as { elements: OverpassElement[] };
+      return data.elements ?? [];
+    } catch (fetchError) {
+      lastError = fetchError instanceof Error ? fetchError : new Error('OpenStreetMap search failed.');
+    }
   }
-  const data = (await response.json()) as { elements: OverpassElement[] };
-  return data.elements ?? [];
+  throw lastError ?? new Error('OpenStreetMap search failed. Try again in a moment.');
 }
 
 function elementLocation(element: OverpassElement): { lat: number; lng: number } | null {
